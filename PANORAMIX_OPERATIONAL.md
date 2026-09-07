@@ -16,6 +16,7 @@ httpbin is a real repo (not under `platform-tools/fixtures/`). The platform owns
 | Encode Postman collection semantics in contract | **Rejected** — content-agnostic |
 | Pin Flask/Werkzeug in the Unit contract | **Rejected** — `build` is admission shape; emulate does not execute `build.command` |
 | Add `/whoami` so emulate's fixture demo has a domain route | **Rejected** — probe is already `/get` |
+| Add `image:` (or any engine pin) to the Unit YAML | **Rejected** — pin stays 0.5; the container runtime records `@sha256` in its binding / lock sidecar |
 
 ## Run (with panoramix tools available)
 
@@ -41,3 +42,27 @@ Emulate only: Unix adapter, localhost edge, stamped `PLATFORM_NETWORK_EGRESS`. `
 ## Digest gotcha
 
 `run.entrypoint` names only `platform_run.py`. Editing `httpbin/core.py` alone must **not** change the deploy digest under emulate’s entrypoint rule. Editing `platform_run.py` must.
+
+## Image digest for the container profile
+
+The container runtime ([panoramix-runtime](https://github.com/guypayeur/panoramix-runtime)) admits a **guest-CI image digest**. That pin is **not** a Unit field. Pin stays **0.5**. Do not add `image:` here.
+
+Guest CI (off-box, not the operator host) builds the **runtime recipe** image — contract `build.command` + `run.entrypoint`; this repo’s `Dockerfile` is unused — and emits:
+
+```text
+localhost/panoramix/httpbin@sha256:<digest>
+```
+
+How CI emits it (from a [panoramix-runtime](https://github.com/guypayeur/panoramix-runtime) checkout, this tree as `GUEST_ROOT`):
+
+```bash
+export GUEST_ROOT=/path/to/panoramix-guest-httpbin
+python3 -m runtime.apply record-lock
+# JSON: image, digest, path → bindings/guest-httpbin.lock.yaml
+```
+
+Equivalent: generate `Containerfile.runtime` from the Unit, `podman build --timestamp 0`, then `podman image inspect --format '{{.Digest}}'`.
+
+Publish the `@sha256` line as a CI artifact or log. The operator copies it into the runtime lock sidecar. Runtime `apply` compares that digest; a local rebuild that is not that object is refused.
+
+Operator-side schema: [panoramix-runtime bindings/README.md](https://github.com/guypayeur/panoramix-runtime/blob/main/bindings/README.md) (R11 / runtime #26).
